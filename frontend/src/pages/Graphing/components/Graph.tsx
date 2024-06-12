@@ -9,6 +9,7 @@ import {
 	IconSolidDocumentReport,
 	IconSolidExternalLink,
 	IconSolidLoading,
+	IconSolidLocationMarker,
 	IconSolidTable,
 	presetStartDate,
 	Stack,
@@ -16,6 +17,11 @@ import {
 	Tooltip,
 } from '@highlight-run/ui/components'
 import { vars } from '@highlight-run/ui/vars'
+import {
+	FunnelChart,
+	FunnelChartConfig,
+	FunnelDisplay,
+} from '@pages/Graphing/components/FunnelChart'
 import clsx from 'clsx'
 import _ from 'lodash'
 import moment from 'moment'
@@ -26,8 +32,11 @@ import { CategoricalChartState } from 'recharts/types/chart/types'
 import { loadingIcon } from '@/components/Button/style.css'
 import { useRelatedResource } from '@/components/RelatedResources/hooks'
 import { TIME_FORMAT } from '@/components/Search/SearchForm/constants'
-import { useGetMetricsLazyQuery } from '@/graph/generated/hooks'
-import { GetMetricsQuery } from '@/graph/generated/operations'
+import {
+	useGetFunnelLazyQuery,
+	useGetMetricsLazyQuery,
+} from '@/graph/generated/hooks'
+import { GetFunnelQuery, GetMetricsQuery } from '@/graph/generated/operations'
 import { Maybe, MetricAggregator, ProductType } from '@/graph/generated/schemas'
 import {
 	BarChart,
@@ -48,14 +57,25 @@ import {
 
 import * as style from './Graph.css'
 
-export type View = 'Line chart' | 'Bar chart' | 'Table'
-export const VIEWS: View[] = ['Line chart', 'Bar chart', 'Table']
+export type View = 'Line chart' | 'Bar chart' | 'Funnel chart' | 'Table'
+export const VIEWS: View[] = [
+	'Line chart',
+	'Bar chart',
+	'Funnel chart',
+	'Table',
+]
 export const VIEW_ICONS = [
 	<IconSolidChartSquareLine size={16} key="line chart" />,
 	<IconSolidChartSquareBar size={16} key="bar chart" />,
+	<IconSolidLocationMarker size={16} key="funnel chart" />,
 	<IconSolidTable size={16} key="table" />,
 ]
-export const VIEW_LABELS = ['Line chart', 'Bar chart / histogram', 'Table']
+export const VIEW_LABELS = [
+	'Line chart',
+	'Bar chart / histogram',
+	'Funnel chart',
+	'Table',
+]
 
 export const TIMESTAMP_KEY = 'Timestamp'
 export const GROUP_KEY = 'Group'
@@ -78,6 +98,7 @@ export type ViewConfig =
 	| LineChartConfig
 	| BarChartConfig
 	| PieChartConfig
+	| FunnelChartConfig
 	| TableConfig
 	| ListConfig
 
@@ -594,6 +615,12 @@ export const getViewConfig = (
 			showLegend: true,
 			display: display as BarDisplay,
 		}
+	} else if (viewType === 'Funnel chart') {
+		viewConfig = {
+			type: viewType,
+			showLegend: true,
+			display: display as FunnelDisplay,
+		}
 	} else if (viewType === 'Table') {
 		viewConfig = {
 			type: viewType,
@@ -648,6 +675,18 @@ export const useGraphData = (
 		}
 		return data
 	}, [metrics?.metrics.bucket_count, metrics?.metrics.buckets, xAxisMetric])
+}
+
+export const useFunnelData = (
+	metrics: GetFunnelQuery | undefined,
+	xAxisMetric: string,
+) => {
+	return useMemo(() => {
+		return metrics?.funnel.buckets.map((b) => ({
+			[GROUP_KEY]: b.group.join(' '),
+			[b.group[0]]: b.metric_value,
+		}))
+	}, [metrics?.funnel.buckets])
 }
 
 export const useGraphSeries = (
@@ -757,8 +796,18 @@ const Graph = ({
 		getMetrics,
 		{ data: newMetrics, called, loading, previousData: previousMetrics },
 	] = useGetMetricsLazyQuery()
+	const [
+		getFunnel,
+		{
+			data: newFunnel,
+			called: calledFunnel,
+			loading: loadingFunnel,
+			previousData: previousFunnel,
+		},
+	] = useGetFunnelLazyQuery()
 
 	const metrics = loading ? previousMetrics : newMetrics
+	const funnel = loadingFunnel ? previousFunnel : newFunnel
 
 	const rebaseFetchTime = useCallback(() => {
 		if (!selectedPreset) {
@@ -837,6 +886,55 @@ const Graph = ({
 			}
 		})
 
+		getFunnel({
+			variables: {
+				product_type: productType,
+				project_id: projectId,
+				params: {
+					date_range: {
+						start_date: moment(fetchStart)
+							.startOf('minute')
+							.format(TIME_FORMAT),
+						end_date: moment(fetchEnd)
+							.startOf('minute')
+							.format(TIME_FORMAT),
+					},
+					steps: [
+						// TODO(vkorolik)
+						{
+							step: '',
+							column: metric || "SessionAttributes['clientID']",
+							metric_type: functionType,
+						},
+						{
+							step: "email != ''",
+							column: metric || "SessionAttributes['email']",
+							metric_type: functionType,
+						},
+						{
+							step: "event = 'Viewed session'",
+							column: metric || "SessionAttributes['email']",
+							metric_type: functionType,
+						},
+						{
+							step: "event = 'Viewed error'",
+							column: metric || "SessionAttributes['email']",
+							metric_type: functionType,
+						},
+					],
+				},
+				group_by: groupByKey !== undefined ? [groupByKey] : [],
+			},
+		}).then(() => {
+			// create another poll timeout if pollInterval is set
+			if (pollInterval) {
+				pollTimeout.current = setTimeout(
+					rebaseFetchTime,
+					pollInterval,
+				) as unknown as number
+			}
+		})
+
 		return () => {
 			if (!!pollTimeout.current) {
 				clearTimeout(pollTimeout.current)
@@ -863,6 +961,8 @@ const Graph = ({
 	])
 
 	const data = useGraphData(metrics, xAxisMetric)
+	const funnelData = useFunnelData(funnel, xAxisMetric)
+
 	const series = useGraphSeries(data, xAxisMetric)
 
 	const [spotlight, setSpotlight] = useState<number | undefined>()
@@ -937,6 +1037,22 @@ const Graph = ({
 					>
 						{children}
 					</BarChart>
+				)
+				break
+			case 'Funnel chart':
+				innerChart = (
+					<FunnelChart
+						data={funnelData}
+						xAxisMetric={xAxisMetric}
+						yAxisMetric={yAxisMetric}
+						yAxisFunction={yAxisFunction}
+						viewConfig={viewConfig}
+						series={series}
+						spotlight={spotlight}
+						setTimeRange={setTimeRange}
+					>
+						{children}
+					</FunnelChart>
 				)
 				break
 			case 'Table':

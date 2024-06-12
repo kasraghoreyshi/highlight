@@ -11,6 +11,10 @@ import {
 	TagSwitchGroup,
 	Text,
 } from '@highlight-run/ui/components'
+import {
+	FUNNEL_DISPLAY,
+	FunnelDisplay,
+} from '@pages/Graphing/components/FunnelChart'
 import { useParams } from '@util/react-router/useParams'
 import { Divider } from 'antd'
 import React, {
@@ -69,7 +73,12 @@ import {
 import * as style from './GraphingEditor.css'
 import { LabeledRow } from './LabeledRow'
 import { OptionDropdown } from './OptionDropdown'
-import { BarChartSettings, LineChartSettings, TableSettings } from './Settings'
+import {
+	FunnelChartSettings,
+	BarChartSettings,
+	LineChartSettings,
+	TableSettings,
+} from './Settings'
 
 type BucketBy = 'None' | 'Interval' | 'Count'
 const BUCKET_BY_OPTIONS: BucketBy[] = ['None', 'Interval', 'Count']
@@ -183,6 +192,9 @@ export const GraphingEditor: React.FC = () => {
 			case 'Bar chart':
 				display = barDisplay
 				break
+			case 'Funnel chart':
+				display = funnelDisplay
+				break
 			case 'Table':
 				nullHandling = tableNullHandling
 				break
@@ -279,6 +291,8 @@ export const GraphingEditor: React.FC = () => {
 				setLineDisplay(g.display as LineDisplay)
 			} else if (viewType === 'Bar chart') {
 				setBarDisplay(g.display as BarDisplay)
+			} else if (viewType === 'Funnel chart') {
+				setFunnelDisplay(g.display as FunnelDisplay)
 			} else if (viewType === 'Table') {
 				setTableNullHandling(g.nullHandling as TableNullHandling)
 			}
@@ -318,6 +332,7 @@ export const GraphingEditor: React.FC = () => {
 	)
 	const [lineDisplay, setLineDisplay] = useState(LINE_DISPLAY[0])
 	const [barDisplay, setBarDisplay] = useState(BAR_DISPLAY[0])
+	const [funnelDisplay, setFunnelDisplay] = useState(FUNNEL_DISPLAY[0])
 
 	const [query, setQuery] = useState('')
 	const [debouncedQuery, setDebouncedQuery] = useState('')
@@ -371,6 +386,8 @@ export const GraphingEditor: React.FC = () => {
 		nullHandling = lineNullHandling
 	} else if (viewType === 'Bar chart') {
 		display = barDisplay
+	} else if (viewType === 'Funnel chart') {
+		display = funnelDisplay
 	} else if (viewType === 'Table') {
 		nullHandling = tableNullHandling
 	}
@@ -586,6 +603,12 @@ export const GraphingEditor: React.FC = () => {
 										<BarChartSettings
 											barDisplay={barDisplay}
 											setBarDisplay={setBarDisplay}
+										/>
+									)}
+									{viewType === 'Funnel chart' && (
+										<FunnelChartSettings
+											funnelDisplay={funnelDisplay}
+											setFunnelDisplay={setFunnelDisplay}
 										/>
 									)}
 									{viewType === 'Table' && (
