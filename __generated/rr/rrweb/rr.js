@@ -528,6 +528,31 @@ var maskedInputType = ({
   const actualType = type && type.toLowerCase();
   return overwriteRecord !== "true" && (!!maskInputOptions[tagName.toLowerCase()] || !!(actualType && maskInputOptions[actualType]));
 };
+var resizeCanvas = (canvas, sampling) => {
+  let scale = sampling.resizeFactor || 1;
+  if (sampling.maxSnapshotDimension) {
+    const maxDim = Math.max(canvas.width, canvas.height);
+    scale = Math.min(scale, sampling.maxSnapshotDimension / maxDim);
+  }
+  const width = canvas.width * scale;
+  const height = canvas.height * scale;
+  return { width, height };
+};
+var snapshot2DCanvas = (canvas, sampling) => {
+  var _a2, _b;
+  const { width, height } = resizeCanvas(canvas, sampling);
+  const resizedCanvas = document.createElement("canvas");
+  const resizedContext = resizedCanvas.getContext("2d");
+  if (resizedContext === null)
+    return "";
+  resizedCanvas.width = width;
+  resizedCanvas.height = height;
+  resizedContext.drawImage(canvas, 0, 0, width, height);
+  return resizedCanvas.toDataURL(
+    ((_a2 = sampling.dataURLOptions) == null ? void 0 : _a2.type) ?? "image/webp",
+    ((_b = sampling.dataURLOptions) == null ? void 0 : _b.quality) ?? 0.9
+  );
+};
 var _id = 1;
 var tagNameRegex = new RegExp("[^a-z0-9-_:]");
 var IGNORED_NODE = -2;
@@ -792,9 +817,9 @@ function serializeNode(n2, options) {
     maskTextClass,
     maskTextFn,
     maskInputFn,
-    dataURLOptions = {},
     inlineImages,
     recordCanvas,
+    canvasSampling,
     keepIframeSrcFn,
     newlyAddedElement = false,
     cssCaptured = false,
@@ -833,7 +858,7 @@ function serializeNode(n2, options) {
         maskInputOptions,
         maskInputFn,
         maskTextClass,
-        dataURLOptions,
+        canvasSampling,
         inlineImages,
         recordCanvas,
         keepIframeSrcFn,
@@ -923,9 +948,9 @@ function serializeElementNode(n2, options) {
     maskInputOptions = {},
     maskInputFn,
     maskTextClass,
-    dataURLOptions = {},
     inlineImages,
     recordCanvas,
+    canvasSampling,
     keepIframeSrcFn,
     newlyAddedElement = false,
     privacySetting,
@@ -1003,23 +1028,20 @@ function serializeElementNode(n2, options) {
   if (tagName === "canvas" && recordCanvas) {
     if (n2.__context === "2d") {
       if (!is2DCanvasBlank(n2)) {
-        attributes.rr_dataURL = n2.toDataURL(
-          dataURLOptions.type,
-          dataURLOptions.quality
+        attributes.rr_dataURL = snapshot2DCanvas(
+          n2,
+          canvasSampling
         );
       }
     } else if (!("__context" in n2)) {
-      const canvasDataURL = n2.toDataURL(
-        dataURLOptions.type,
-        dataURLOptions.quality
+      const canvasDataURL = snapshot2DCanvas(
+        n2,
+        canvasSampling
       );
       const blankCanvas = doc.createElement("canvas");
       blankCanvas.width = n2.width;
       blankCanvas.height = n2.height;
-      const blankCanvasDataURL = blankCanvas.toDataURL(
-        dataURLOptions.type,
-        dataURLOptions.quality
-      );
+      const blankCanvasDataURL = snapshot2DCanvas(blankCanvas, canvasSampling);
       if (canvasDataURL !== blankCanvasDataURL) {
         attributes.rr_dataURL = canvasDataURL;
       }
@@ -1039,9 +1061,9 @@ function serializeElementNode(n2, options) {
         canvasService.width = image.naturalWidth;
         canvasService.height = image.naturalHeight;
         canvasCtx.drawImage(image, 0, 0);
-        attributes.rr_dataURL = canvasService.toDataURL(
-          dataURLOptions.type,
-          dataURLOptions.quality
+        attributes.rr_dataURL = snapshot2DCanvas(
+          canvasService,
+          canvasSampling
         );
       } catch (err) {
         if (image.crossOrigin !== "anonymous") {
@@ -1121,10 +1143,7 @@ function serializeElementNode(n2, options) {
       const blankCanvas = doc.createElement("canvas");
       blankCanvas.width = n2.width;
       blankCanvas.height = n2.height;
-      attributes.rr_dataURL = blankCanvas.toDataURL(
-        dataURLOptions.type,
-        dataURLOptions.quality
-      );
+      attributes.rr_dataURL = snapshot2DCanvas(blankCanvas, canvasSampling);
     }
   }
   return {
@@ -1192,9 +1211,9 @@ function serializeNodeWithId(n2, options) {
     maskTextFn,
     maskInputFn,
     slimDOMOptions,
-    dataURLOptions = {},
     inlineImages = false,
     recordCanvas = false,
+    canvasSampling = {},
     onSerialize,
     onIframeLoad,
     iframeLoadTimeout = 5e3,
@@ -1227,9 +1246,9 @@ function serializeNodeWithId(n2, options) {
     maskTextClass,
     maskTextFn,
     maskInputFn,
-    dataURLOptions,
     inlineImages,
     recordCanvas,
+    canvasSampling,
     keepIframeSrcFn,
     newlyAddedElement,
     cssCaptured,
@@ -1291,9 +1310,9 @@ function serializeNodeWithId(n2, options) {
       maskTextFn,
       maskInputFn,
       slimDOMOptions,
-      dataURLOptions,
       inlineImages,
       recordCanvas,
+      canvasSampling,
       preserveWhiteSpace,
       onSerialize,
       onIframeLoad,
@@ -1352,9 +1371,9 @@ function serializeNodeWithId(n2, options) {
             maskTextFn,
             maskInputFn,
             slimDOMOptions,
-            dataURLOptions,
             inlineImages,
             recordCanvas,
+            canvasSampling,
             preserveWhiteSpace,
             onSerialize,
             onIframeLoad,
@@ -1394,9 +1413,9 @@ function serializeNodeWithId(n2, options) {
             maskTextFn,
             maskInputFn,
             slimDOMOptions,
-            dataURLOptions,
             inlineImages,
             recordCanvas,
+            canvasSampling,
             preserveWhiteSpace,
             onSerialize,
             onIframeLoad,
@@ -1429,11 +1448,11 @@ function snapshot(n2, options) {
     inlineStylesheet = true,
     inlineImages = false,
     recordCanvas = false,
+    canvasSampling = {},
     maskAllInputs = false,
     maskTextFn,
     maskInputFn,
     slimDOM = false,
-    dataURLOptions,
     preserveWhiteSpace,
     onSerialize,
     onIframeLoad,
@@ -1492,9 +1511,9 @@ function snapshot(n2, options) {
     maskTextFn,
     maskInputFn,
     slimDOMOptions,
-    dataURLOptions,
     inlineImages,
     recordCanvas,
+    canvasSampling,
     preserveWhiteSpace,
     onSerialize,
     onIframeLoad,
@@ -4566,10 +4585,10 @@ var MutationBuffer = class {
     __publicField(this, "maskInputFn");
     __publicField(this, "keepIframeSrcFn");
     __publicField(this, "recordCanvas");
+    __publicField(this, "sampling");
     __publicField(this, "inlineImages");
     __publicField(this, "privacySetting");
     __publicField(this, "slimDOMOptions");
-    __publicField(this, "dataURLOptions");
     __publicField(this, "doc");
     __publicField(this, "mirror");
     __publicField(this, "iframeManager");
@@ -4599,6 +4618,7 @@ var MutationBuffer = class {
         return nextId;
       };
       const pushAdd = (n2) => {
+        var _a2;
         const parent = index.parentNode(n2);
         if (!parent || !inDom(n2)) {
           return;
@@ -4631,8 +4651,8 @@ var MutationBuffer = class {
           maskTextFn: this.maskTextFn,
           maskInputFn: this.maskInputFn,
           slimDOMOptions: this.slimDOMOptions,
-          dataURLOptions: this.dataURLOptions,
           recordCanvas: this.recordCanvas,
+          canvasSampling: (_a2 = this.sampling) == null ? void 0 : _a2.canvas,
           inlineImages: this.inlineImages,
           privacySetting: this.privacySetting,
           onSerialize: (currentN) => {
@@ -4998,10 +5018,10 @@ var MutationBuffer = class {
       "maskInputFn",
       "keepIframeSrcFn",
       "recordCanvas",
+      "sampling",
       "inlineImages",
       "privacySetting",
       "slimDOMOptions",
-      "dataURLOptions",
       "doc",
       "mirror",
       "iframeManager",
@@ -7114,9 +7134,21 @@ var CanvasManager = class {
     let lastSnapshotTime = 0;
     let rafId;
     const elementFoundTime = /* @__PURE__ */ new Map();
+    const querySelectorAll2 = (node, selector) => {
+      const nodes = [];
+      node.querySelectorAll(selector).forEach((n2) => nodes.push(n2));
+      const nodeIterator = document.createNodeIterator(node, Node.ELEMENT_NODE);
+      let currentNode;
+      while (currentNode = nodeIterator.nextNode()) {
+        if (currentNode == null ? void 0 : currentNode.shadowRoot) {
+          nodes.push(...querySelectorAll2(currentNode.shadowRoot, selector));
+        }
+      }
+      return nodes;
+    };
     const getCanvas = (timestamp) => {
       const matchedCanvas = [];
-      win.document.querySelectorAll("canvas").forEach((canvas) => {
+      querySelectorAll2(win.document, "canvas").forEach((canvas) => {
         if (!isBlocked(canvas, blockClass, blockSelector, true)) {
           this.debug(canvas, "discovered canvas");
           matchedCanvas.push(canvas);
@@ -7131,7 +7163,7 @@ var CanvasManager = class {
     const getVideos = (timestamp) => {
       const matchedVideos = [];
       if (recordVideos) {
-        win.document.querySelectorAll("video").forEach((video) => {
+        querySelectorAll2(win.document, "video").forEach((video) => {
           if (video.src !== "" && video.src.indexOf("blob:") === -1)
             return;
           if (!isBlocked(video, blockClass, blockSelector, true)) {
@@ -7641,7 +7673,6 @@ function record(options = {}) {
       maskTextSelector,
       inlineStylesheet,
       maskInputOptions,
-      dataURLOptions,
       maskTextFn,
       maskInputFn,
       recordCanvas,
@@ -7686,8 +7717,8 @@ function record(options = {}) {
       maskTextFn,
       maskInputFn,
       slimDOM: slimDOMOptions,
-      dataURLOptions,
       recordCanvas,
+      canvasSampling: sampling.canvas,
       inlineImages,
       privacySetting,
       onSerialize: (n2) => {
